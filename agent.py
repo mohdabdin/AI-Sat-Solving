@@ -1,9 +1,30 @@
-# -*- coding: utf-8 -*-
-"""
-Spyder Editor
+from __future__ import absolute_import, division, print_function
 
-This is a temporary script file.
-"""
+import base64
+import imageio
+import IPython
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+import PIL.Image
+import pyvirtualdisplay
+
+import tensorflow as tf
+
+from tf_agents.agents.dqn import dqn_agent
+from tf_agents.drivers import dynamic_step_driver
+from tf_agents.environments import suite_gym
+from tf_agents.environments import tf_py_environment
+from tf_agents.eval import metric_utils
+from tf_agents.metrics import tf_metrics
+from tf_agents.networks import sequential
+from tf_agents.policies import random_tf_policy
+from tf_agents.replay_buffers import tf_uniform_replay_buffer
+from tf_agents.trajectories import trajectory
+from tf_agents.specs import tensor_spec
+from tf_agents.utils import common
+import Environment
+
 num_iterations = 20000 # @param {type:"integer"}
 
 initial_collect_steps = 100  # @param {type:"integer"} 
@@ -17,58 +38,51 @@ log_interval = 200  # @param {type:"integer"}
 num_eval_episodes = 10  # @param {type:"integer"}
 eval_interval = 1000  # @param {type:"integer"}
 
+env = Environment.CnfSolverEnv()
 
-from tf_agents.agents.dqn.dqn_agent import DqnAgent
-from tf_agents.environments import tf_py_environment
-from tf_agents.environments import suite_gym
-from tf_agents.networks.sequential import Sequential
-from tf_agents.policies import random_tf_policy
-from tf_agents.replay_buffers import tf_uniform_replay_buffer
-from tf_agents.specs import tensor_spec
-from tf_agents.trajectories import trajectory
-from tf_agents.utils import common
-from tf import Variable
-from tf.keras.layers import Dense
-from tf.keras.activations import relu
-from tf.keras.initializers import VarianceScaling, RandomUniform, Constant
-from tf.keras.optimizers import Adam
-from Environment import CnfSolverEnv
+train_py_env = Environment.CnfSolverEnv()
+eval_py_env = Environment.CnfSolverEnv()
 
-env = CnfSolverEnv(None); # Ask M about this later
+train_env = tf_py_environment.TFPyEnvironment(train_py_env)
+eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
+
+
 fc_layer_params = (100, 50)
 action_tensor_spec = tensor_spec.from_spec(env.action_spec())
 num_actions = action_tensor_spec.maximum - action_tensor_spec.minimum + 1
-env_name = '[Our Environment Goes Here]'
-train_py_env = suite_gym.load(env_name)
-eval_py_env = suite_gym.load(env_name)
-train_env = tf_py_environment.TFPyEnvironment(train_py_env)
-eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
 
 # Define a helper function to create Dense layers configured with the right
 # activation and kernel initializer.
 def dense_layer(num_units):
-  return Dense(
+  return tf.keras.layers.Dense(
       num_units,
-      activation = relu,
-      kernel_initializer = VarianceScaling(
-          scale = 2.0, mode = 'fan_in', distribution ='truncated_normal'))
+      activation=tf.keras.activations.relu,
+      kernel_initializer=tf.keras.initializers.VarianceScaling(
+          scale=2.0, mode='fan_in', distribution='truncated_normal'))
+
 
 # QNetwork consists of a sequence of Dense layers followed by a dense layer
 # with `num_actions` units to generate one q_value per available action as
 # it's output.
 dense_layers = [dense_layer(num_units) for num_units in fc_layer_params]
-q_values_layer = Dense(
+q_values_layer = tf.keras.layers.Dense(
     num_actions,
-    activation = None,
-    kernel_initializer = RandomUniform(minval = -0.03, maxval = 0.03),
-    bias_initializer = Constant(-0.2))
-q_net = Sequential(dense_layers + [q_values_layer])
+    activation=None,
+    kernel_initializer=tf.keras.initializers.RandomUniform(
+        minval=-0.03, maxval=0.03),
+    bias_initializer=tf.keras.initializers.Constant(-0.2))
 
-optimizer = Adam(learning_rate=learning_rate)
+q_net = sequential.Sequential(dense_layers + [q_values_layer])
 
-train_step_counter = Variable(0)
 
-agent = DqnAgent(
+optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+
+train_step_counter = tf.Variable(0)
+
+#print(train_env.time_step_spec())
+#print(train_env.action_spec())
+#print(num_actions)
+agent = dqn_agent.DqnAgent(
     train_env.time_step_spec(),
     train_env.action_spec(),
     q_network=q_net,
@@ -78,19 +92,14 @@ agent = DqnAgent(
 
 agent.initialize()
 
-policy = random_tf_policy.RandomTFPolicy(train_env.observation_spec(), train_env.action_spec())
 
-#try:
-#    %%time
-#except:
-#    pass
+eval_policy = agent.policy
+collect_policy = agent.collect_policy
 
-# (Optional) Optimize by wrapping some of the code in a graph using TF function.
-agent.train = common.function(agent.train)
+random_policy = random_tf_policy.RandomTFPolicy(train_env.time_step_spec(),
+                                                train_env.action_spec())
 
-# Reset the train step
-agent.train_step_counter.assign(0)
-
+#@test {"skip": true}
 def compute_avg_return(environment, policy, num_episodes=10):
 
   total_return = 0.0
@@ -101,13 +110,23 @@ def compute_avg_return(environment, policy, num_episodes=10):
 
     while not time_step.is_last():
       action_step = policy.action(time_step)
-      time_step = env.step(action_step.action)
+      time_step = environment.step(action_step.action)
       episode_return += time_step.reward
     total_return += episode_return
 
   avg_return = total_return / num_episodes
   return avg_return.numpy()[0]
 
+
+replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
+    data_spec=agent.collect_data_spec,
+    batch_size=train_env.batch_size,
+    max_length=replay_buffer_max_length)
+
+agent.collect_data_spec
+agent.collect_data_spec._fields
+
+#@test {"skip": true}
 def collect_step(environment, policy, buffer):
   time_step = environment.current_time_step()
   action_step = policy.action(time_step)
@@ -120,21 +139,39 @@ def collect_step(environment, policy, buffer):
 def collect_data(env, policy, buffer, steps):
   for _ in range(steps):
     collect_step(env, policy, buffer)
-    
-replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-data_spec=agent.collect_data_spec,
-batch_size=train_env.batch_size,
-max_length=replay_buffer_max_length)
+
+collect_data(train_env, random_policy, replay_buffer, initial_collect_steps)
+
 dataset = replay_buffer.as_dataset(
     num_parallel_calls=3, 
     sample_batch_size=batch_size, 
     num_steps=2).prefetch(3)
-iterator = iter(dataset)    
+
+iterator = iter(dataset)
 
 
+# For the curious:
+# Uncomment to see what the dataset iterator is feeding to the agent.
+# Compare this representation of replay data 
+# to the collection of individual trajectories shown earlier.
 
+# iterator.next()
+
+
+#@test {"skip": true}
+try:
+  %%time
+except:
+  pass
+
+# (Optional) Optimize by wrapping some of the code in a graph using TF function.
+agent.train = common.function(agent.train)
+
+# Reset the train step
+agent.train_step_counter.assign(0)
 # Evaluate the agent's policy once before training.
 avg_return = compute_avg_return(eval_env, agent.policy, num_eval_episodes)
+print(avg_return)
 returns = [avg_return]
 
 for _ in range(num_iterations):
