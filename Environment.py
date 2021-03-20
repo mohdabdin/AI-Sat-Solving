@@ -12,16 +12,17 @@ from cnfGenerator import cnfGenerator
 tf.compat.v1.enable_v2_behavior()
 
 CLAUSE_LENGTH = 2
-N_VARIABLES = 10
-CNF_SIZE = 40
+N_VARIABLES = 2
+CNF_SIZE = 6
 
 class CnfSolverEnv(py_environment.PyEnvironment):
   def __init__(self):
     self._action_spec = array_spec.BoundedArraySpec(
         shape=(), dtype=np.int32, minimum=0, maximum=(N_VARIABLES*2)+1, name='action')
     self._observation_spec = array_spec.BoundedArraySpec(
-        shape=(40,), dtype=np.int32, minimum=[-N_VARIABLES for _ in range(CNF_SIZE)], maximum=[N_VARIABLES for _ in range(CNF_SIZE)], name='observation')
-    self.generator = cnfGenerator(n_variables = N_VARIABLES, clause_range=(2,3), cnf_size=40)
+        shape=(CNF_SIZE,), dtype=np.int32, minimum=[-N_VARIABLES for _ in range(CNF_SIZE)], maximum=[N_VARIABLES for _ in range(CNF_SIZE)], name='observation')
+    
+    self.generator = cnfGenerator(n_variables = N_VARIABLES, clause_range=(CLAUSE_LENGTH, CLAUSE_LENGTH+1), cnf_size=CNF_SIZE)
     self.cnf = self.generator.generateCnf()
     self.initial_label = self.generator.solveCnf(self.cnf)
     self._state = np.array(self.cnf)
@@ -37,6 +38,7 @@ class CnfSolverEnv(py_environment.PyEnvironment):
     self.cnf = self.generator.generateCnf()
     self._state = np.array(self.cnf)
     self._episode_ended = False
+
     return ts.restart(self._state.flatten())
 
   def simplify(self, cnf, lit):
@@ -73,34 +75,52 @@ class CnfSolverEnv(py_environment.PyEnvironment):
     if action==0:
         #agent predicts unsatifiable
         if self.initial_label == True:
-            reward = -1 #negative reward for false prediction
-            print("episode ended: Agent predicted unsatisfiable incorrectly")
+            reward = 0 #negative reward for false prediction
+            #print("episode ended: Agent predicted unsatisfiable incorrectly")
         else:
             reward = 1 #positive reward for correct prediction
-            print("episode ended: Agent predicted unsatisfiable correctly")
+            #print("episode ended: Agent predicted unsatisfiable correctly")
             
         self._episode_ended = True
-        return ts.termination(self._state.flatten(), reward)
+        
+        final_state = np.array(self._state) #record state when episode is finished to return to agent
+        self._state = self.generator.generateCnf()
+        self.initial_label = self.generator.solveCnf(self._state)
+        self._state = np.array(self._state)
+        
+        return ts.termination(final_state.flatten(), reward)
     
     elif action==N_VARIABLES+1:
         #agent predicts satisfiable
         if self.initial_label == False:
-            reward = -1 #negative reward for false prediction
-            print("episode ended: Agent predicted satisfiable incorrectly")
+            reward = 0 #negative reward for false prediction
+            #print("episode ended: Agent predicted satisfiable incorrectly")
         else:
             reward = 1 #positive reward for correct prediction
-            print("episode ended: Agent predicted satisfiable correctly")
-            
-        self._episode_ended = True
-        return ts.termination(self._state.flatten(), reward)
-    
-    elif action not in self._state or -action not in self._state:
-        #if literal in not present in formula
-        reward = -1
-        print("agent chose a literal not found in cnf")
+            #print("episode ended: Agent predicted satisfiable correctly")
         
         self._episode_ended = True
-        return ts.termination(self._state.flatten(), reward)
+        
+        final_state = np.array(self._state) #record state when episode is finished to return to agent
+        self._state = self.generator.generateCnf()
+        self.initial_label = self.generator.solveCnf(self._state)
+        self._state = np.array(self._state)
+        
+        return ts.termination(final_state.flatten(), reward)
+    
+    elif action not in self._state and -action not in self._state:
+        #if literal in not present in formula
+        reward = 0
+        #print("agent chose a literal not found in cnf")
+        
+        self._episode_ended = True
+        
+        final_state = np.array(self._state) #record state when episode is finished to return to agent
+        self._state = self.generator.generateCnf()
+        self.initial_label = self.generator.solveCnf(self._state)
+        self._state = np.array(self._state)
+        
+        return ts.termination(final_state.flatten(), reward)
     
     else:
         #agent chose a literal to simplify the formula
@@ -108,11 +128,18 @@ class CnfSolverEnv(py_environment.PyEnvironment):
         minisat_updated_cnf = self.minisat_reformat(self._state)
         
         if self.generator.solveCnf(minisat_updated_cnf) != self.initial_label:
-            print("episode ended: Agent simplified the cnf making it unsatisfiable when it was satisfiable")
+            #print("episode ended: Agent simplified the cnf making it unsatisfiable when it was satisfiable")
             #if the agent's implification made it unsatifiable when it was satisfiable
             self._episode_ended = True
-            reward = -1
-            return ts.termination(self._state.flatten(), reward)
+            reward = 0
+            
+            final_state = np.array(self._state) #record state when episode is finished to return to agent
+            self._state = self.generator.generateCnf()
+            self.initial_label = self.generator.solveCnf(self._state)
+            self._state = np.array(self._state)
+            
+            return ts.termination(final_state.flatten(), reward)
+    
 
     return ts.transition(self._state.flatten(), reward, discount=1.0)
     
