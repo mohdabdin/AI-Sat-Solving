@@ -58,4 +58,4 @@ class cnfGenerator:
     
     
     
-    q
+   
