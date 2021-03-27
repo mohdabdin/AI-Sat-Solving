@@ -1,7 +1,6 @@
 import numpy as np
 import random
-
-from pysat.solvers import Minisat22
+from pysat.solvers import Solver
 
 class cnfGenerator:
     def __init__(self, n_variables=4, clause_range = (3,4), cnf_size=20, sat_bias=0.5):
@@ -35,10 +34,8 @@ class cnfGenerator:
         return cnf
 
     def solveCnf(self, cnf):
-        m = Minisat22()
-        for clause in cnf:
-            m.add_clause(clause)
-        return m.solve()
+        with Solver(bootstrap_with=cnf) as s:
+            return s.solve()
     
     def getLabelledCnf(self):
         cnf = self.generateCnf()
@@ -52,7 +49,6 @@ class cnfGenerator:
             cnf[clauseNum][int(random.random() * len(cnf[clauseNum])) - 1] *= -1
         return cnf
     
-g = cnfGenerator()
-for i in range(10):
-    cnf = g.generateCnf()
-    print(g.solveCnf(cnf))
+    
+    
+    
