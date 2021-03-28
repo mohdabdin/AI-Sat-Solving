@@ -3,7 +3,7 @@ import random
 from pysat.solvers import Solver
 
 class cnfGenerator:
-    def __init__(self, n_variables=4, clause_range = (3,4), cnf_size=20, sat_bias=0.5):
+    def __init__(self, n_variables=4, clause_range = (3,4), cnf_size=20, sat_bias=0):
        self.n_variables = n_variables
        self.clause_range = clause_range
        self.cnf_size = cnf_size
@@ -47,6 +47,9 @@ class cnfGenerator:
         while(self.solveCnf(cnf) != desiredSat):
             clauseNum = int(random.random() * len(cnf)) - 1
             cnf[clauseNum][int(random.random() * len(cnf[clauseNum])) - 1] *= -1
+            #print(self.solveCnf(cnf))
+            #print(desiredSat)
+            #print("-----")
         return cnf
     
     
