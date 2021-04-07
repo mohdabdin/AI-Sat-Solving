@@ -25,7 +25,16 @@ from tf_agents.specs import tensor_spec
 from tf_agents.utils import common
 import Environment
 
-num_iterations = 20000 # @param {type:"integer"}
+#Declaring graph titles and labels
+plt.xlabel('step')
+plt.ylabel('loss')
+plt.title('model loss')
+
+#Creating arrays to store loss and steps in order for it to be plotted
+loss_plot = []
+step_plot = []
+
+num_iterations = 5000 # @param {type:"integer"}
 
 initial_collect_steps = 100  # @param {type:"integer"} 
 collect_steps_per_iteration = 1  # @param {type:"integer"}
@@ -187,8 +196,14 @@ for _ in range(num_iterations):
 
   if step % log_interval == 0:
     print('step = {0}: loss = {1}'.format(step, train_loss))
+    loss_plot.append(train_loss) #adding loss and step values to arrays
+    step_plot.append(step)
 
   if step % eval_interval == 0:
     avg_return = compute_avg_return(eval_env, agent.policy, num_eval_episodes)
     print('step = {0}: Average Return = {1}'.format(step, avg_return))
     returns.append(avg_return)
+    
+#Plotting the values
+plt.plot(step_plot,loss_plot, label = 'Training')
+plt.legend()
