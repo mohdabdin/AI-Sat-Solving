@@ -1,4 +1,4 @@
-# AI-Sat-Solving project
+# SAT Solving via Artificial Intelligence
 
 CNF Solver is a Python system that solves CNFs with the help of reinforcement training 
 
